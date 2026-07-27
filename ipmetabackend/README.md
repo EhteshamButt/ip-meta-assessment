@@ -2,10 +2,11 @@
 
 NestJS API that wraps the public [GitHub REST API](https://docs.github.com/en/rest) to power a developer
 dashboard: profile details, aggregated repository stats (stars, forks, language breakdown), and paginated,
-sortable repository listings for any GitHub username.
+sortable repository listings for any GitHub username. It also proxies the frontend's in-app AI guide to
+OpenAI's Chat Completions API.
 
-This exists so the frontend never talks to GitHub directly — the backend handles authentication, caching,
-retries, and rate-limit/error normalization in one place.
+This exists so the frontend never talks to GitHub (or OpenAI) directly — the backend handles
+authentication, caching, retries, and rate-limit/error normalization in one place.
 
 ## Why a backend at all?
 
@@ -24,10 +25,12 @@ re-implementing retry/rate-limit handling. Centralizing it here means:
 Browser
   │
   ▼
-Next.js frontend  ──────────────►  ipmetabackend (NestJS)  ──────────────►  GitHub REST API
-                     HTTP/JSON        │                        HTTPS
+                                                              ┌─►  GitHub REST API
+Next.js frontend  ──────────────►  ipmetabackend (NestJS)  ──┤
+                     HTTP/JSON        │                       └─►  OpenAI Chat Completions API
                                       ├─ GithubController   (routes, input validation)
                                       ├─ GithubService       (fetch, retry/backoff, aggregation)
+                                      ├─ ChatController/Service (AI guide proxy)
                                       ├─ TtlCacheService     (in-memory response cache)
                                       └─ HttpExceptionFilter (consistent error responses)
 ```
@@ -58,6 +61,8 @@ The API listens on `http://localhost:4000` by default, with every route under th
 | `GITHUB_TOKEN` | No, but recommended | — | GitHub personal access token. Without it, requests are capped at GitHub's unauthenticated limit of 60/hour; with it, 5,000/hour. See below for how to generate one. |
 | `CORS_ORIGIN` | No | `http://localhost:3000` | Comma-separated list of origins allowed to call this API |
 | `CACHE_TTL_MS` | No | `300000` (5 min) | How long GitHub responses are cached in memory |
+| `OPENAI_API_KEY` | Yes, for the AI guide | — | Powers `/api/chat`. Get one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys) — this is a paid, usage-billed API, so set a spending limit on the account before deploying publicly. Without it, `/api/chat` returns a clean `503` rather than failing oddly. |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | Override if that model is retired by the time you deploy. |
 
 ### Getting a GitHub token
 
@@ -149,6 +154,31 @@ Query params:
 Errors: `400` invalid username format, `404` user not found, `429` GitHub rate limit exceeded (includes a
 `resetAt` timestamp), `502` upstream GitHub failure.
 
+### `POST /api/chat`
+
+Powers the frontend's AI guide widget. Not GitHub-related — this is a thin, stateless proxy to OpenAI's
+Chat Completions API with a system prompt describing how to use the dashboard, so answers stay grounded
+in the app's actual features rather than generic chatbot output.
+
+Request body:
+
+```json
+{ "messages": [{ "role": "user", "content": "How do I sort a user's repos?" }] }
+```
+
+`messages` must be non-empty, each item `{ role: "user" | "assistant", content: string }` (max 1000
+chars/message); only the last 12 messages are forwarded to OpenAI to bound cost per request. The caller
+carries the conversation history — this endpoint is stateless and doesn't persist anything server-side.
+
+Response:
+
+```json
+{ "reply": "Use the sort pills above the repo grid — Recently updated, Most stars, ..." }
+```
+
+Errors: `400` invalid message shape, `503` `OPENAI_API_KEY` not configured, `502` OpenAI request failed
+or returned an empty response.
+
 ## Design notes
 
 - **Caching**: a minimal in-memory TTL cache (`TtlCacheService`) sits in front of every GitHub call. It's
@@ -167,7 +197,8 @@ npm run test:cov
 ```
 
 `GithubService` is tested against a mocked `fetch` — profile mapping, 404 handling, rate-limit handling,
-and cache reuse.
+and cache reuse. `ChatService` is tested the same way — message validation, missing-key handling, a
+successful OpenAI response, and an upstream error response.
 
 ## Deployment (Render)
 
@@ -179,7 +210,7 @@ and cache reuse.
    - **Build command**: `npm install && npm run build`
    - **Start command**: `npm run start:prod`
 4. Add environment variables from the table above (`GITHUB_TOKEN`, `CORS_ORIGIN` set to your deployed
-   frontend URL, etc.). Render sets `PORT` automatically.
+   frontend URL, `OPENAI_API_KEY` for the AI guide, etc.). Render sets `PORT` automatically.
 5. Deploy, then confirm `https://<your-service>.onrender.com/api/health` returns `{"status":"ok",...}`.
 
 Railway and Fly.io work the same way — Node build command, start command, and the same env vars.
@@ -239,7 +270,8 @@ Steps:
    into the UI form (the UI doesn't always show a value as filled in even when it picked one up).
 4. Add environment variables (**Site configuration → Environment variables**): `GITHUB_TOKEN`,
    `CORS_ORIGIN` (your frontend's deployed URL, no trailing slash — it's matched exactly against the
-   browser's `Origin` header), `CACHE_TTL_MS` if you want to override the default.
+   browser's `Origin` header), `OPENAI_API_KEY` for the AI guide, `CACHE_TTL_MS` if you want to override
+   the default.
 5. Deploy, then confirm `https://<your-site>.netlify.app/api/health` returns `{"status":"ok",...}`.
 
 This was verified locally before pushing by running the actual function through `@netlify/zip-it-and-ship-it`

@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
 import { GithubModule } from './github/github.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { GithubModule } from './github/github.module';
       load: [configuration],
     }),
     GithubModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

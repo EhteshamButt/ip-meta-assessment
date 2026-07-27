@@ -14,6 +14,8 @@ function makeConfigService(overrides: Partial<AppConfig> = {}): ConfigService {
     corsOrigin: 'http://localhost:3000',
     cacheTtlMs: 300_000,
     githubToken: undefined,
+    openaiApiKey: undefined,
+    openaiModel: 'gpt-4o-mini',
     ...overrides,
   };
 

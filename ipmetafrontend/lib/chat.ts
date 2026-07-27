@@ -1,3 +1,6 @@
+import { ApiError, getApiBaseUrl } from "./api";
+import { ApiErrorBody } from "./types";
+
 export type ChatRole = "user" | "assistant";
 
 export interface ChatMessage {
@@ -5,33 +8,31 @@ export interface ChatMessage {
   content: string;
 }
 
-export interface ChatResponseBody {
+interface ChatReplyBody {
   reply: string;
 }
 
-export interface ChatErrorBody {
-  error: string;
-}
-
-export const MAX_MESSAGE_LENGTH = 1000;
-export const MAX_HISTORY_MESSAGES = 12;
-
 export async function sendChatMessage(history: ChatMessage[]): Promise<string> {
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: history }),
-  });
+  let response: Response;
 
-  const data = (await response.json().catch(() => null)) as
-    | ChatResponseBody
-    | ChatErrorBody
-    | null;
-
-  if (!response.ok || !data || !("reply" in data)) {
-    const message = data && "error" in data ? data.error : "The AI guide is unavailable right now.";
-    throw new Error(message);
+  try {
+    response = await fetch(`${getApiBaseUrl()}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history }),
+    });
+  } catch {
+    throw new ApiError("Could not reach the AI guide. Is the backend running?", 0);
   }
 
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
+    const message = Array.isArray(body?.message)
+      ? body.message.join(", ")
+      : (body?.message ?? `The AI guide failed with status ${response.status}`);
+    throw new ApiError(message, response.status);
+  }
+
+  const data = (await response.json()) as ChatReplyBody;
   return data.reply;
 }
