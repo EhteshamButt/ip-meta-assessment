@@ -1,0 +1,16 @@
+[build]
+  base = "ipmetabackend"
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm install && npm run build"
+
+# The Nest app itself (see netlify/functions/api.ts) is not prefixed with
+# "api" — this redirect owns that prefix so the deployed URL matches the
+# same /api/* shape the Render/traditional-server deployment uses.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"

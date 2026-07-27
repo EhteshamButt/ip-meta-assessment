@@ -52,4 +52,4 @@ Open `http://localhost:3000` and search a GitHub username (e.g. `torvalds`).
   against the backend directly.
 
 See each service's README for environment variables, the full API reference, and deployment steps
-(Render for the backend, Vercel for the frontend).
+(Render or Netlify for the backend, Vercel for the frontend).

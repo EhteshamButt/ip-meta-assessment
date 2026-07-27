@@ -183,3 +183,48 @@ and cache reuse.
 5. Deploy, then confirm `https://<your-service>.onrender.com/api/health` returns `{"status":"ok",...}`.
 
 Railway and Fly.io work the same way — Node build command, start command, and the same env vars.
+
+## Deployment (Netlify)
+
+Netlify only runs static sites and serverless Functions — there's no persistent server the way Render
+provides, so this app can't deploy there unmodified. `netlify/functions/api.ts` adapts it: it boots the
+same Nest app behind [`serverless-http`](https://github.com/dougmoscrop/serverless-http), reusing one
+warm instance across invocations where possible. Two things fall out of that:
+
+- **The in-memory cache is much less useful.** Each cold start gets a fresh `TtlCacheService` instance,
+  and Netlify doesn't guarantee warm reuse between requests, so don't rely on it to meaningfully cut
+  request volume to GitHub the way it does on Render.
+- **The compiled `dist/` output is imported, not `src/`.** Netlify bundles functions with esbuild, which
+  doesn't implement `emitDecoratorMetadata` — bundling Nest's decorator-based DI straight from source
+  silently breaks it. Building first (`netlify.toml`'s `command`) and importing the already-compiled
+  `dist/` sidesteps that, since decorators are already resolved into plain JS by the time esbuild sees it.
+
+`netlify.toml` at the repo root wires this up:
+
+```toml
+[build]
+  base = "ipmetabackend"
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm install && npm run build"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+```
+
+Steps:
+
+1. Push this repo to GitHub (already done if you're working from the monorepo root).
+2. On [Netlify](https://app.netlify.com), **Add new site → Import an existing project**, pick this repo.
+3. Netlify should pick up `netlify.toml` automatically and pre-fill the base directory, build command,
+   and functions directory — verify they match the block above rather than typing them into the UI form.
+4. Add environment variables (**Site configuration → Environment variables**): `GITHUB_TOKEN`,
+   `CORS_ORIGIN` (your frontend's deployed URL), `CACHE_TTL_MS` if you want to override the default.
+5. Deploy, then confirm `https://<your-site>.netlify.app/api/health` returns `{"status":"ok",...}`.
+
+This was verified locally by invoking the compiled function directly with mocked Lambda-style events
+(health check, profile lookup, 404 handling, and the alternate path shape Netlify's redirect can produce)
+before ever pushing — Netlify's actual esbuild bundling of the function is the one part that can only be
+confirmed by an actual deploy.
