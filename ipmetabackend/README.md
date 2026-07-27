@@ -198,6 +198,12 @@ warm instance across invocations where possible. Two things fall out of that:
   doesn't implement `emitDecoratorMetadata` — bundling Nest's decorator-based DI straight from source
   silently breaks it. Building first (`netlify.toml`'s `command`) and importing the already-compiled
   `dist/` sidesteps that, since decorators are already resolved into plain JS by the time esbuild sees it.
+- **A handful of NestJS's optional peer dependencies have to be marked external.** `@nestjs/core` and
+  `@nestjs/common` contain feature-gated `require()` calls for microservices/websockets support and for
+  `class-validator`/`class-transformer` (used only if you wire up `ValidationPipe` with them) — none of
+  which this app installs or uses. Esbuild resolves every `require()` it statically finds regardless of
+  whether that branch ever executes, so the build fails on these unless they're listed under
+  `external_node_modules`.
 
 `netlify.toml` at the repo root wires this up:
 
@@ -212,6 +218,16 @@ warm instance across invocations where possible. Two things fall out of that:
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = [
+    "@nestjs/microservices",
+    "@nestjs/microservices/microservices-module",
+    "@nestjs/websockets/socket-module",
+    "class-validator",
+    "class-transformer",
+  ]
 ```
 
 Steps:
@@ -219,12 +235,14 @@ Steps:
 1. Push this repo to GitHub (already done if you're working from the monorepo root).
 2. On [Netlify](https://app.netlify.com), **Add new site → Import an existing project**, pick this repo.
 3. Netlify should pick up `netlify.toml` automatically and pre-fill the base directory, build command,
-   and functions directory — verify they match the block above rather than typing them into the UI form.
+   publish directory, and functions directory — verify they match the block above rather than typing them
+   into the UI form (the UI doesn't always show a value as filled in even when it picked one up).
 4. Add environment variables (**Site configuration → Environment variables**): `GITHUB_TOKEN`,
-   `CORS_ORIGIN` (your frontend's deployed URL), `CACHE_TTL_MS` if you want to override the default.
+   `CORS_ORIGIN` (your frontend's deployed URL, no trailing slash — it's matched exactly against the
+   browser's `Origin` header), `CACHE_TTL_MS` if you want to override the default.
 5. Deploy, then confirm `https://<your-site>.netlify.app/api/health` returns `{"status":"ok",...}`.
 
-This was verified locally by invoking the compiled function directly with mocked Lambda-style events
-(health check, profile lookup, 404 handling, and the alternate path shape Netlify's redirect can produce)
-before ever pushing — Netlify's actual esbuild bundling of the function is the one part that can only be
-confirmed by an actual deploy.
+This was verified locally before pushing by running the actual function through `@netlify/zip-it-and-ship-it`
+(the same bundler Netlify's build servers use) and invoking the resulting bundle with mocked Lambda-style
+events — health check, profile lookup, and 404 handling all confirmed working against the real bundled
+artifact, not just against source run through `ts-node`.

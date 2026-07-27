@@ -12,5 +12,18 @@
   to = "/.netlify/functions/api/:splat"
   status = 200
 
+# NestJS's core has optional, feature-gated require() calls for peer
+# packages this app never installs (microservices/websockets support,
+# class-validator/class-transformer for decorator-based validation). Esbuild
+# resolves every require() it finds statically, so bundling fails on these
+# even though the code paths never run. Marking them external skips
+# resolving them at bundle time; Node just never reaches those lines.
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = [
+    "@nestjs/microservices",
+    "@nestjs/microservices/microservices-module",
+    "@nestjs/websockets/socket-module",
+    "class-validator",
+    "class-transformer",
+  ]
