@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteHeader } from "@/components/SiteHeader";
+import { AiGuideChat } from "@/components/AiGuideChat";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col bg-zinc-50 dark:bg-black">
         <SiteHeader />
         <div className="flex flex-1 flex-col">{children}</div>
+        <AiGuideChat />
       </body>
     </html>
   );

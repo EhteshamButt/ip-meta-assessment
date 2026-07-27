@@ -18,6 +18,9 @@ User → Next.js frontend → ipmetabackend (NestJS) → GitHub REST API → pro
   states are handled explicitly (see `not-found.tsx` / `ErrorState`).
 - Sorting and "load more" pagination on the repo list happen client-side (`RepoBrowser`), calling the
   backend directly from the browser.
+- An AI guide (bottom-right chat widget, `AiGuideChat`) answers questions about using the app. It calls
+  `app/api/chat/route.ts`, a Next.js Route Handler that proxies to OpenAI's Chat Completions API — the
+  key stays server-side; the browser only ever talks to this app's own `/api/chat` route.
 
 ## Getting started
 
@@ -36,6 +39,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Yes | `http://localhost:4000/api` | Base URL of the `ipmetabackend` API. Used both server-side (initial page render) and client-side (repo sorting/pagination), so it's intentionally `NEXT_PUBLIC_` — it points at a public read-only API, not a secret. |
+| `OPENAI_API_KEY` | Yes, for the AI guide | — | Powers the chat widget. **Not** `NEXT_PUBLIC_` — it's read only inside the `/api/chat` route handler, server-side, and never sent to the browser. Get one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). This is a paid, usage-billed API — set a spending limit on your OpenAI account before deploying publicly. |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | Override if that model is retired by the time you deploy. |
 
 ## Project structure
 
@@ -45,12 +50,23 @@ app/
   u/[username]/page.tsx    Dashboard (Server Component, fetches data)
   u/[username]/loading.tsx Skeleton shown while the dashboard loads
   u/[username]/not-found.tsx  Shown when notFound() is triggered
-components/                Presentational + client components
+  api/chat/route.ts        Server-side proxy to OpenAI for the AI guide
+components/
+  AiGuideChat.tsx           Bottom-right chat widget
+  ...                       Other presentational + client components
 lib/
   api.ts                   Typed fetch client for the backend
+  chat.ts                  Types + client helper for the AI guide
   types.ts                 Shared response types (mirrors backend DTOs)
   format.ts                Number/date formatting helpers
 ```
+
+### AI guide notes
+
+The `/api/chat` route caps each request to the last 12 messages and 1000 characters per message before
+forwarding to OpenAI, mainly to bound per-request cost rather than as abuse prevention — there's no
+per-IP rate limiting, since that needs persistent state (a KV store, etc.) that's out of scope here. If
+this goes past a demo/assessment context, add that before relying on the OpenAI spending limit alone.
 
 ## Testing it locally
 
@@ -71,8 +87,8 @@ npm start
 1. Push this repo to GitHub.
 2. Import it into [Vercel](https://vercel.com/new).
 3. Set the **Root Directory** to `ipmetafrontend` if deploying from the monorepo root.
-4. Add the environment variable `NEXT_PUBLIC_API_URL` pointing at your deployed backend
-   (e.g. `https://your-backend.onrender.com/api`).
+4. Add environment variables: `NEXT_PUBLIC_API_URL` pointing at your deployed backend
+   (e.g. `https://your-backend.onrender.com/api`), and `OPENAI_API_KEY` for the AI guide.
 5. Deploy. Vercel auto-detects Next.js — no build command changes needed.
 
 Make sure the backend's `CORS_ORIGIN` env var includes this app's deployed URL, or client-side repo
